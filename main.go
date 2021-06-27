@@ -81,8 +81,8 @@ func main() {
 			"filter_start":           []string{"2011-01-01"},
 			"filter_end":             []string{time.Now().Format("2006-01-02")},
 			"respect_privacy_zones":  []string{strconv.FormatBool(true)},
-			"include_everyone":       []string{strconv.FormatBool(false)},
-			"include_followers_only": []string{strconv.FormatBool(false)},
+			"include_everyone":       []string{strconv.FormatBool(true)},
+			"include_followers_only": []string{strconv.FormatBool(true)},
 			"include_only_me":        []string{strconv.FormatBool(true)},
 		}
 		url := fmt.Sprintf(
