@@ -2,7 +2,7 @@
 
 This is a simple Go server that proxies my [personal strava heatmap](https://www.google.com/search?q=strava+personal+heatmap&oq=strava+personal+heatmap&aqs=chrome..69i57j69i60l2&sourceid=chrome&ie=UTF-8) on a public endpoint in order to use it as a [map source in Gaia GPS](https://www.google.com/search?q=gaia+gps+cusotm+map+source&oq=gaia+gps+cusotm+map+source&aqs=chrome..69i57j33i10i22i29i30&sourceid=chrome&ie=UTF-8).
 
-![Gaia screenshot of tiles](https://user-images.githubusercontent.com/329222/123540100-93f1b400-d73d-11eb-8315-18090ed65111.PNG)
+![Gaia screenshot of tiles](https://user-images.githubusercontent.com/329222/123540346-cc45c200-d73e-11eb-839c-82f447b4d0d1.PNG)
 
 ## Configuration & Usage
 
