@@ -26,6 +26,23 @@ func main() {
 		panic(err)
 	}
 
+	revealPrivacyZones, err := strconv.ParseBool(os.Getenv("REVEAL_PRIVACY_ZONES"))
+	if err != nil {
+		panic(err)
+	}
+	revealOnlyMeActivities, err := strconv.ParseBool(os.Getenv("REVEAL_ONLY_ME_ACTIVITIES"))
+	if err != nil {
+		panic(err)
+	}
+	revealFollowerOnlyActivities, err := strconv.ParseBool(os.Getenv("REVEAL_FOLLOWER_ONLY_ACTIVITIES"))
+	if err != nil {
+		panic(err)
+	}
+	revealPublicActivities, err := strconv.ParseBool(os.Getenv("REVEAL_PUBLIC_ACTIVITIES"))
+	if err != nil {
+		panic(err)
+	}
+
 	tileRouteRe := regexp.MustCompile(`^/tiles/(?P<z>\d+)/(?P<x>\d+)/(?P<y>\d+)$`)
 
 	serveTile := func(rw http.ResponseWriter, r *http.Request) error {
@@ -80,10 +97,10 @@ func main() {
 			"filter_type":            []string{string(sport)},
 			"filter_start":           []string{"2011-01-01"},
 			"filter_end":             []string{time.Now().Format("2006-01-02")},
-			"respect_privacy_zones":  []string{strconv.FormatBool(true)},
-			"include_everyone":       []string{strconv.FormatBool(true)},
-			"include_followers_only": []string{strconv.FormatBool(true)},
-			"include_only_me":        []string{strconv.FormatBool(true)},
+			"respect_privacy_zones":  []string{strconv.FormatBool(!revealPrivacyZones)},
+			"include_everyone":       []string{strconv.FormatBool(revealPublicActivities)},
+			"include_followers_only": []string{strconv.FormatBool(revealFollowerOnlyActivities)},
+			"include_only_me":        []string{strconv.FormatBool(revealOnlyMeActivities)},
 		}
 		url := fmt.Sprintf(
 			"https://personal-heatmaps-external.strava.com/tiles/%s/%s/%d/%d/%d@2x.png?%s",
