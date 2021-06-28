@@ -16,34 +16,43 @@ func (t *stravaTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(req)
 }
 
+type Client interface {
+	Login() error
+	HttpClient() *http.Client
+}
+
 // the strava client holds an http client that maintains auth cookies
-type stravaClient struct {
+type client struct {
 	stravaUrl  string
 	email      string
 	password   string
-	HttpClient *http.Client
+	httpClient *http.Client
+
+	claimedLogin bool
+	claimLock    sync.Mutex
+	loginLock    sync.Mutex
 }
 
-func NewClient(email, password string) (*stravaClient, error) {
+func NewClient(email, password string) (Client, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return &stravaClient{
+	return &client{
 		stravaUrl: "https://www.strava.com",
 		email:     email,
 		password:  password,
-		HttpClient: &http.Client{
+		httpClient: &http.Client{
 			Transport: &stravaTransport{},
 			Jar:       jar,
 		},
 	}, nil
 }
 
-func (sc *stravaClient) getCSRF() (string, string, error) {
+func (sc *client) getCSRF() (string, string, error) {
 	c := colly.NewCollector()
-	c.SetCookieJar(sc.HttpClient.Jar)
+	c.SetCookieJar(sc.httpClient.Jar)
 	var wg sync.WaitGroup
 	var csrfParam, csrfToken string
 	wg.Add(1)
@@ -63,20 +72,46 @@ func (sc *stravaClient) getCSRF() (string, string, error) {
 	return csrfParam, csrfToken, nil
 }
 
-func (sc *stravaClient) Login() error {
-	csrfParam, csrfToken, err := sc.getCSRF()
-	if err != nil {
-		return err
-	}
+func (sc *client) claimLogin() bool {
+	sc.claimLock.Lock()
+	claimed := !sc.claimedLogin
+	sc.claimedLogin = true
+	sc.claimLock.Unlock()
+	return claimed
+}
 
-	sessionResponse, err := sc.HttpClient.PostForm(sc.stravaUrl+"/session", url.Values{
-		csrfParam:  []string{csrfToken},
-		"email":    []string{sc.email},
-		"password": []string{sc.password},
-	})
-	if err != nil {
-		return err
+func (sc *client) unclaimLogin() {
+	sc.claimLock.Lock()
+	sc.claimedLogin = false
+	sc.claimLock.Unlock()
+}
+
+func (sc *client) Login() error {
+	thisClaimsLogin := sc.claimLogin()
+	sc.loginLock.Lock()
+	defer sc.loginLock.Unlock()
+
+	if thisClaimsLogin {
+		csrfParam, csrfToken, err := sc.getCSRF()
+		if err != nil {
+			return err
+		}
+
+		sessionResponse, err := sc.httpClient.PostForm(sc.stravaUrl+"/session", url.Values{
+			csrfParam:  []string{csrfToken},
+			"email":    []string{sc.email},
+			"password": []string{sc.password},
+		})
+		if err != nil {
+			return err
+		}
+		sessionResponse.Body.Close()
+
+		sc.unclaimLogin()
 	}
-	sessionResponse.Body.Close()
 	return nil
+}
+
+func (sc *client) HttpClient() *http.Client {
+	return sc.httpClient
 }

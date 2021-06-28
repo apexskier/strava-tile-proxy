@@ -1,10 +1,13 @@
 package strava
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,6 +16,7 @@ import (
 
 func TestStravaClient(t *testing.T) {
 	requestCount := 0
+	authTokenCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch requestCount {
 		case 0:
@@ -33,7 +37,8 @@ func TestStravaClient(t *testing.T) {
 				"password":       []string{"password"},
 			}, query)
 
-			w.Header().Add("Set-Cookie", "auth=auth_token")
+			w.Header().Add("Set-Cookie", fmt.Sprintf("auth=auth_token_%d", authTokenCount))
+			authTokenCount++
 			w.WriteHeader(200)
 		default:
 			assert.Fail(t, "unexpected request")
@@ -41,18 +46,55 @@ func TestStravaClient(t *testing.T) {
 		requestCount++
 	}))
 
-	sc, err := NewClient("test@example.com", "password")
+	jar, err := cookiejar.New(nil)
 	require.NoError(t, err)
-	sc.stravaUrl = server.URL
+	sc := &client{
+		stravaUrl: server.URL,
+		email:     "test@example.com",
+		password:  "password",
+		httpClient: &http.Client{
+			Jar: jar,
+		},
+	}
 
-	require.NoError(t, sc.Login())
+	// concurrent logins should result in a single actual login
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			assert.NoError(t, sc.Login())
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+
 	// make sure the server handled requests
 	assert.Equal(t, 2, requestCount)
 
 	// auth token cookie was set in the client's jar
 	u, err := url.Parse(server.URL)
 	require.NoError(t, err)
-	cookies := sc.HttpClient.Jar.Cookies(u)
-	assert.Len(t, cookies, 1)
-	assert.Equal(t, http.Cookie{Name: "auth", Value: "auth_token"}, *cookies[0])
+	cookies := jar.Cookies(u)
+	require.Len(t, cookies, 1)
+	assert.Equal(t, http.Cookie{Name: "auth", Value: "auth_token_0"}, *cookies[0])
+
+	requestCount = 0
+
+	// the next batch of concurrent logins should also work
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			assert.NoError(t, sc.Login())
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+
+	// make sure the server handled requests
+	assert.Equal(t, 2, requestCount)
+
+	// auth token cookie was set in the client's jar
+	cookies = jar.Cookies(u)
+	require.Len(t, cookies, 1)
+	assert.Equal(t, http.Cookie{Name: "auth", Value: "auth_token_1"}, *cookies[0])
 }
