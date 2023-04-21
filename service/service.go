@@ -178,7 +178,7 @@ func (s *Service) ServeGlobalTile(rw http.ResponseWriter, r *http.Request) error
 	heatmapServer := strava.HeatmapServers[s.rand.Intn(len(strava.HeatmapServers))]
 
 	tileQueryParams := url.Values{
-		// "v":                      []string{strconv.FormatUint(9, 10)},
+		// "v": []string{strconv.FormatUint(19, 10)},
 	}
 	url := fmt.Sprintf(
 		s.globalHeatmapDomain+strava.GlobalHeatmapPath,
@@ -194,10 +194,10 @@ func (s *Service) ServeGlobalTile(rw http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	if tileResponse.StatusCode == http.StatusUnauthorized {
+	if tileResponse.StatusCode == http.StatusForbidden || tileResponse.StatusCode == http.StatusUnauthorized {
 		// authenticate and retry once
-		s.logger.Println("auto-authenticating")
-		if err := s.stravaClient.Login(); err != nil {
+		s.logger.Println("auto-authenticating cf")
+		if err := s.stravaClient.CloudFrontAuth(heatmapServer); err != nil {
 			return err
 		}
 		tileResponse, err = s.stravaClient.HttpClient().Get(url)

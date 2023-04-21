@@ -1,6 +1,7 @@
 package strava
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -18,6 +19,7 @@ func (t *stravaTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 type Client interface {
 	Login() error
+	CloudFrontAuth(server string) error
 	HttpClient() *http.Client
 }
 
@@ -40,7 +42,7 @@ func NewClient(email, password string) (Client, error) {
 	}
 
 	return &client{
-		stravaUrl: "https://www.strava.com",
+		stravaUrl: StravaDomain,
 		email:     email,
 		password:  password,
 		httpClient: &http.Client{
@@ -84,6 +86,16 @@ func (sc *client) unclaimLogin() {
 	sc.claimLock.Lock()
 	sc.claimedLogin = false
 	sc.claimLock.Unlock()
+}
+
+func (sc *client) CloudFrontAuth(server string) error {
+	sc.Login()
+
+	sc.loginLock.Lock()
+	defer sc.loginLock.Unlock()
+
+	_, err := sc.httpClient.Get(fmt.Sprintf(GlobalHeatmapDomain, server) + "/auth")
+	return err
 }
 
 func (sc *client) Login() error {

@@ -5,6 +5,7 @@ import "errors"
 var HeatmapServers = []string{"a", "b", "c"}
 
 const (
+	StravaDomain          = "https://www.strava.com"
 	PersonalHeatmapDomain = "https://personal-heatmaps-external.strava.com"
 	GlobalHeatmapDomain   = "https://heatmap-external-%s.strava.com"
 	PersonalHeatmapPath   = "/tiles/%s/%s/%d/%d/%d@2x.png?%s"
