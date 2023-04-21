@@ -8,6 +8,7 @@ This is a simple Go server that proxies my [personal strava heatmap](https://www
 
 The server is configured through environment variables, all of which are required:
 
+* `ATHLETE_ID` - your strava athlete ID (https://www.strava.com/athletes/$ATHLETE_ID)
 * `STRAVA_EMAIL` - your strava account's email
 * `STRAVA_PASSWORD` - your strava account's password (social sign in is not supported)
 * `REVEAL_PRIVACY_ZONES` - (bool) reveal [strava privacy zones](https://support.strava.com/hc/en-us/articles/115000173384-Privacy-Zones)
