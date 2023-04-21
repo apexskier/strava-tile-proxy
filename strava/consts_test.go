@@ -7,7 +7,7 @@ import (
 )
 
 func TestParseHeat(t *testing.T) {
-	color, err := ParseHeat("hot")
+	color, err := ParseHeat("red")
 	assert.Equal(t, HeatRed, color)
 	assert.NoError(t, err)
 

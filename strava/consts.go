@@ -2,22 +2,32 @@ package strava
 
 import "errors"
 
-const TilesNamespace = "14856714"
+var HeatmapServers = []string{"a", "b", "c"}
+
+const (
+	StravaDomain          = "https://www.strava.com"
+	PersonalHeatmapDomain = "https://personal-heatmaps-external.strava.com"
+	GlobalHeatmapDomain   = "https://heatmap-external-%s.strava.com"
+	PersonalHeatmapPath   = "/tiles/%s/%s/%d/%d/%d@2x.png?%s"
+	GlobalHeatmapPath     = "/tiles-auth/%s/%s/%d/%d/%d@2x.png?%s"
+)
 
 type Heat string
 
 const (
-	HeatOrange  Heat = "orange"
-	HeatRed     Heat = "hot"
-	HeatBlue    Heat = "blue"
-	HeatBlueRed Heat = "bluered"
-	HeatPurple  Heat = "purple"
-	HeatGray    Heat = "gray"
+	HeatOrange     Heat = "orange"
+	HeatRed        Heat = "red"
+	HeatMobileBlue Heat = "mobileblue"
+	HeatBlue       Heat = "blue"
+	HeatBlueRed    Heat = "bluered"
+	HeatPurple     Heat = "purple"
+	HeatGray       Heat = "gray"
 )
 
 func ParseHeat(raw string) (Heat, error) {
 	if raw != string(HeatOrange) &&
 		raw != string(HeatRed) &&
+		raw != string(HeatMobileBlue) &&
 		raw != string(HeatBlue) &&
 		raw != string(HeatBlueRed) &&
 		raw != string(HeatPurple) &&
