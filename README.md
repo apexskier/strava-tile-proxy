@@ -15,10 +15,9 @@ The server is configured through environment variables, all of which are require
 * `REVEAL_ONLY_ME_ACTIVITIES` - (bool) reveal activities only visible to you
 * `REVEAL_FOLLOWER_ONLY_ACTIVITIES` - (bool) reveal activities visible to only your followers
 * `REVEAL_PUBLIC_ACTIVITIES` - (bool) reveal activities that are public
+* `API_TOKEN` - (optional, string) if non-empty, must be present in the `api_token` query parameter on requests
 
-You can also set `API_TOKEN` to a string that must be present in the `api_token` query parameter on requests for the server to respond.
-
-Tiles are accessible at the url `/tiles/{z}/{x}/{y}`, where `z`, `x`, and `y` are standard TMS xyz coordinates. A query parameters can be used customize tiles:
+Tiles are accessible at the url `/tiles/{z}/{x}/{y}`, where `z`, `x`, and `y` are standard TMS xyz coordinates, with a maximum `z` of 14 and a minimum of ~6. A query parameters can be used customize tiles:
 
 * `color` (default: "red") - strava heat color ([supported options](https://github.com/apexskier/strava-tile-proxy/blob/411306d444c0f43f31d8d648a504ec56d2bb7b71/strava/consts.go#L17-L25))
 * `sport` (default: "all") - strava sports ([supported options](https://github.com/apexskier/strava-tile-proxy/blob/b1f89caec30ffc7275a3df705cb42fb0c3ebd834/strava/consts.go#L32-L38))
