@@ -15,6 +15,7 @@ The server is configured through environment variables, all of which are require
 * `REVEAL_ONLY_ME_ACTIVITIES` - (bool) reveal activities only visible to you
 * `REVEAL_FOLLOWER_ONLY_ACTIVITIES` - (bool) reveal activities visible to only your followers
 * `REVEAL_PUBLIC_ACTIVITIES` - (bool) reveal activities that are public
+* `API_TOKEN` - (optional, string) if non-empty, must be present in the `api_token` query parameter on requests
 
 Tiles are accessible at the url `/tiles/{z}/{x}/{y}`, where `z`, `x`, and `y` are standard TMS xyz coordinates, with a maximum `z` of 14 and a minimum of ~6. A query parameters can be used customize tiles:
 

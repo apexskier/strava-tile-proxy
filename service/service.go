@@ -26,6 +26,8 @@ type Service struct {
 	logger       *log.Logger
 	rand         *rand.Rand
 
+	apiToken string
+
 	personalHeatmapDomain string
 	globalHeatmapDomain   string
 
@@ -71,10 +73,13 @@ func New() (*Service, error) {
 		return nil, errors.Wrap(err, "bad REVEAL_PUBLIC_ACTIVITIES")
 	}
 
+	apiToken := os.Getenv("API_TOKEN")
+
 	return &Service{
 		stravaClient:                 stravaClient,
 		logger:                       logger,
 		rand:                         rand.New(rand.NewSource(rand.Int63())),
+		apiToken:                     apiToken,
 		personalHeatmapDomain:        strava.PersonalHeatmapDomain,
 		globalHeatmapDomain:          strava.GlobalHeatmapDomain,
 		athleteID:                    athleteID,
@@ -116,25 +121,17 @@ type Params struct {
 	heatColor strava.Heat
 }
 
-func extractParams(u *url.URL) (p Params, err error) {
-	tileRouteMatches := tileXYZRe.FindStringSubmatch(u.Path)
-	if len(tileRouteMatches) == 0 {
-		return p, ErrNotFound
-	}
-	p.z, err = strconv.ParseUint(tileRouteMatches[1], 10, 64)
-	if err != nil {
-		return p, ErrBadCoord{coord: "z"}
-	}
-	p.x, err = strconv.ParseUint(tileRouteMatches[2], 10, 64)
-	if err != nil {
-		return p, ErrBadCoord{coord: "x"}
-	}
-	p.y, err = strconv.ParseUint(tileRouteMatches[3], 10, 64)
-	if err != nil {
-		return p, ErrBadCoord{coord: "y"}
-	}
-
+func (s *Service) extractParams(u *url.URL) (p Params, err error) {
 	q := u.Query()
+
+	var providedToken string
+	providedTokens := q["api_token"]
+	if len(providedTokens) > 0 {
+		providedToken = providedTokens[0]
+	}
+	if providedToken != s.apiToken {
+		return p, ErrBadQuery{query: "api_token", err: errors.New("incorrect api token")}
+	}
 
 	p.heatColor = strava.HeatRed
 	if heats, ok := q["color"]; ok && len(heats) > 0 {
@@ -152,11 +149,28 @@ func extractParams(u *url.URL) (p Params, err error) {
 		}
 	}
 
+	tileRouteMatches := tileXYZRe.FindStringSubmatch(u.Path)
+	if len(tileRouteMatches) == 0 {
+		return p, ErrNotFound
+	}
+	p.z, err = strconv.ParseUint(tileRouteMatches[1], 10, 64)
+	if err != nil {
+		return p, ErrBadCoord{coord: "z"}
+	}
+	p.x, err = strconv.ParseUint(tileRouteMatches[2], 10, 64)
+	if err != nil {
+		return p, ErrBadCoord{coord: "x"}
+	}
+	p.y, err = strconv.ParseUint(tileRouteMatches[3], 10, 64)
+	if err != nil {
+		return p, ErrBadCoord{coord: "y"}
+	}
+
 	return
 }
 
 func (s *Service) ServeGlobalTile(rw http.ResponseWriter, r *http.Request) error {
-	p, err := extractParams(r.URL)
+	p, err := s.extractParams(r.URL)
 	if err != nil {
 		var badCoordErr ErrBadCoord
 		var badQueryErr ErrBadQuery
@@ -209,7 +223,7 @@ func (s *Service) ServeGlobalTile(rw http.ResponseWriter, r *http.Request) error
 }
 
 func (s *Service) ServePersonalTile(rw http.ResponseWriter, r *http.Request) error {
-	p, err := extractParams(r.URL)
+	p, err := s.extractParams(r.URL)
 	if err != nil {
 		var badCoordErr ErrBadCoord
 		var badQueryErr ErrBadQuery
