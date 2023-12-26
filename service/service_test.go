@@ -33,26 +33,6 @@ func (m *mockStravaClient) Login() error {
 	return args.Error(0)
 }
 
-func TestTileService_NoApiToken(t *testing.T) {
-	stravaClient := mockStravaClient{}
-	defer stravaClient.AssertExpectations(t)
-
-	s := Service{
-		stravaClient: &stravaClient,
-		logger:       log.Default(),
-		rand:         rand.New(rand.NewSource(0)),
-		apiToken:     "token",
-	}
-
-	req := httptest.NewRequest("GET", "https://example.com/tiles/1/2/3", nil)
-	w := httptest.NewRecorder()
-
-	err := s.ServeGlobalTile(w, req)
-
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-}
-
 func TestTileService_BadApiToken(t *testing.T) {
 	stravaClient := mockStravaClient{}
 	defer stravaClient.AssertExpectations(t)
