@@ -2,6 +2,8 @@
 
 This is a simple Go server that proxies my [personal strava heatmap](https://support.strava.com/hc/en-us/articles/216918467-Personal-Heatmaps) and the [global heatmap](https://www.strava.com/heatmap) on a public endpoint in order to use it as a [map source in Gaia GPS](https://help.gaiagps.com/hc/en-us/articles/115003639088-Import-a-Custom-Map-Source). It requires using manual credentials and web scraping, as heatmap data is not available through Strava's OAuth api.
 
+(You can follow me on [Strava here](https://www.strava.com/athletes/14856714))
+
 ![Gaia screenshot of tiles](https://user-images.githubusercontent.com/329222/123540346-cc45c200-d73e-11eb-839c-82f447b4d0d1.PNG)
 
 ## Configuration & Usage
