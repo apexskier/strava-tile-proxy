@@ -8,7 +8,7 @@ This is a simple Go server that proxies my [personal strava heatmap](https://sup
 
 ## Configuration & Usage
 
-The server is configured through environment variables, all of which are required:
+The server is configured through environment variables:
 
 * `REVEAL_PRIVACY_ZONES` - (bool) reveal [strava privacy zones](https://support.strava.com/hc/en-us/articles/115000173384-Privacy-Zones)
 * `REVEAL_ONLY_ME_ACTIVITIES` - (bool) reveal activities only visible to you
