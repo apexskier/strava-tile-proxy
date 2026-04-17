@@ -18,7 +18,7 @@ The server is configured through environment variables, all of which are require
 * `STRAVA_REMEMBER_TOKEN` - (string) `strava_remember_token` cookie value, see [authentication below](#authentication)
 * `STRAVA4_SESSION` - (string) `strava4_session` cookie value, see [authentication below](#authentication)
 
-Tiles are accessible at the url `/tiles/{z}/{x}/{y}`, where `z`, `x`, and `y` are standard TMS xyz coordinates, with a maximum `z` of 14 and a minimum of ~6. A query parameters can be used customize tiles:
+Tiles are accessible at the url `/[global|personal]/tiles/{z}/{x}/{y}`, where `z`, `x`, and `y` are standard TMS xyz coordinates, with a maximum `z` of 14 and a minimum of ~6. A query parameters can be used customize tiles:
 
 * `color` (default: "orange" for personal, "blue" for global) - strava heat color ([supported options](./strava/heats.go))
 * `sport` (default: "all") - strava sports ([supported options](./strava/sports.go))
