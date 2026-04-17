@@ -4,14 +4,12 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"net/http"
-	"net/mail"
 	"net/url"
 	"os"
 	"regexp"
 	"strconv"
-	"time"
+	"strings"
 
 	"github.com/apexskier/strava-tile-proxy/strava"
 	"github.com/pkg/errors"
@@ -24,14 +22,12 @@ var tileXYZRe = regexp.MustCompile(`/(?P<z>\d+)/(?P<x>\d+)/(?P<y>\d+)$`)
 type Service struct {
 	stravaClient strava.Client
 	logger       *log.Logger
-	rand         *rand.Rand
 
 	apiToken string
 
 	personalHeatmapDomain string
 	globalHeatmapDomain   string
 
-	athleteID                    string
 	revealPrivacyZones           bool
 	revealOnlyMeActivities       bool
 	revealFollowerOnlyActivities bool
@@ -39,23 +35,19 @@ type Service struct {
 }
 
 func New() (*Service, error) {
-	email, err := mail.ParseAddress(os.Getenv("STRAVA_EMAIL"))
-	if err != nil {
-		return nil, errors.Wrap(err, "bad STRAVA_EMAIL")
+	rememberToken := os.Getenv("STRAVA_REMEMBER_TOKEN")
+	if rememberToken == "" {
+		return nil, errors.New("missing STRAVA_REMEMBER_TOKEN")
 	}
-	password := os.Getenv("STRAVA_PASSWORD")
-	if password == "" {
-		return nil, errors.New("missing STRAVA_PASSWORD")
+	stravaSession := os.Getenv("STRAVA4_SESSION")
+	if stravaSession == "" {
+		return nil, errors.New("missing STRAVA4_SESSION")
 	}
-	stravaClient, err := strava.NewClient(email.Address, password)
+	stravaClient, err := strava.NewClient(rememberToken, stravaSession)
 	if err != nil {
 		return nil, err
 	}
 
-	athleteID := os.Getenv("ATHLETE_ID")
-	if athleteID == "" {
-		return nil, errors.New("missing ATHLETE_ID")
-	}
 	revealPrivacyZones, err := strconv.ParseBool(os.Getenv("REVEAL_PRIVACY_ZONES"))
 	if err != nil {
 		return nil, errors.Wrap(err, "bad REVEAL_PRIVACY_ZONES")
@@ -78,11 +70,9 @@ func New() (*Service, error) {
 	return &Service{
 		stravaClient:                 stravaClient,
 		logger:                       logger,
-		rand:                         rand.New(rand.NewSource(rand.Int63())),
 		apiToken:                     apiToken,
 		personalHeatmapDomain:        strava.PersonalHeatmapDomain,
 		globalHeatmapDomain:          strava.GlobalHeatmapDomain,
-		athleteID:                    athleteID,
 		revealPrivacyZones:           revealPrivacyZones,
 		revealOnlyMeActivities:       revealOnlyMeActivities,
 		revealFollowerOnlyActivities: revealFollowerOnlyActivities,
@@ -117,7 +107,7 @@ type Params struct {
 	x         uint64
 	y         uint64
 	z         uint64
-	sport     strava.Sport
+	sports    string
 	heatColor strava.Heat
 }
 
@@ -133,7 +123,6 @@ func (s *Service) extractParams(u *url.URL) (p Params, err error) {
 		return p, ErrBadQuery{query: "api_token", err: errors.New("incorrect api token")}
 	}
 
-	p.heatColor = strava.HeatRed
 	if heats, ok := q["color"]; ok && len(heats) > 0 {
 		p.heatColor, err = strava.ParseHeat(heats[0])
 		if err != nil {
@@ -141,12 +130,9 @@ func (s *Service) extractParams(u *url.URL) (p Params, err error) {
 		}
 	}
 
-	p.sport = strava.SportAll
-	if heats, ok := q["sport"]; ok && len(heats) > 0 {
-		p.sport, err = strava.ParseSport(heats[0])
-		if err != nil {
-			return p, ErrBadQuery{query: "sport", err: err}
-		}
+	p.sports = string(strava.SportAll)
+	if sports, ok := q["sports"]; ok && len(sports) > 0 {
+		p.sports = strings.Join(sports, ",")
 	}
 
 	tileRouteMatches := tileXYZRe.FindStringSubmatch(u.Path)
@@ -189,15 +175,16 @@ func (s *Service) ServeGlobalTile(rw http.ResponseWriter, r *http.Request) error
 		return err
 	}
 
-	heatmapServer := strava.HeatmapServers[s.rand.Intn(len(strava.HeatmapServers))]
+	if p.heatColor == "" {
+		p.heatColor = strava.HeatBlue
+	}
 
 	tileQueryParams := url.Values{
-		// "v": []string{strconv.FormatUint(19, 10)},
+		"v": []string{"19"},
 	}
 	url := fmt.Sprintf(
 		s.globalHeatmapDomain+strava.GlobalHeatmapPath,
-		heatmapServer,
-		p.sport,
+		p.sports,
 		p.heatColor,
 		p.z,
 		p.x,
@@ -209,9 +196,9 @@ func (s *Service) ServeGlobalTile(rw http.ResponseWriter, r *http.Request) error
 		return err
 	}
 	if tileResponse.StatusCode == http.StatusForbidden || tileResponse.StatusCode == http.StatusUnauthorized {
-		// authenticate and retry once
-		s.logger.Println("auto-authenticating cf")
-		if err := s.stravaClient.CloudFrontAuth(heatmapServer); err != nil {
+		// refresh CloudFront cookies and retry once
+		s.logger.Println("refreshing CloudFront cookies")
+		if err := s.stravaClient.RefreshCloudFrontCookies(); err != nil {
 			return err
 		}
 		tileResponse, err = s.stravaClient.HttpClient().Get(url)
@@ -242,18 +229,24 @@ func (s *Service) ServePersonalTile(rw http.ResponseWriter, r *http.Request) err
 		return err
 	}
 
+	if p.heatColor == "" {
+		p.heatColor = strava.HeatOrange
+	}
+
 	tileQueryParams := url.Values{
-		"filter_type":            []string{string(p.sport)},
-		"filter_start":           []string{"2011-01-01"},
-		"filter_end":             []string{time.Now().Format("2006-01-02")},
-		"respect_privacy_zones":  []string{strconv.FormatBool(!s.revealPrivacyZones)},
-		"include_everyone":       []string{strconv.FormatBool(s.revealPublicActivities)},
-		"include_followers_only": []string{strconv.FormatBool(s.revealFollowerOnlyActivities)},
-		"include_only_me":        []string{strconv.FormatBool(s.revealOnlyMeActivities)},
+		strava.ParamFilterType:           []string{string(p.sports)},
+		strava.ParamRespectPrivacyZones:  []string{strconv.FormatBool(!s.revealPrivacyZones)},
+		strava.ParamIncludeEveryone:      []string{strconv.FormatBool(s.revealPublicActivities)},
+		strava.ParamIncludeFollowersOnly: []string{strconv.FormatBool(s.revealFollowerOnlyActivities)},
+		strava.ParamIncludeOnlyMe:        []string{strconv.FormatBool(s.revealOnlyMeActivities)},
+	}
+	athleteID, err := s.stravaClient.AthleteID()
+	if err != nil {
+		return err
 	}
 	url := fmt.Sprintf(
 		s.personalHeatmapDomain+strava.PersonalHeatmapPath,
-		s.athleteID,
+		athleteID,
 		p.heatColor,
 		p.z,
 		p.x,
@@ -265,9 +258,9 @@ func (s *Service) ServePersonalTile(rw http.ResponseWriter, r *http.Request) err
 		return err
 	}
 	if tileResponse.StatusCode == http.StatusUnauthorized {
-		// authenticate and retry once
-		s.logger.Println("auto-authenticating")
-		if err := s.stravaClient.Login(); err != nil {
+		// refresh CloudFront cookies and retry once
+		s.logger.Println("refreshing CloudFront cookies")
+		if err := s.stravaClient.RefreshCloudFrontCookies(); err != nil {
 			return err
 		}
 		tileResponse, err = s.stravaClient.HttpClient().Get(url)

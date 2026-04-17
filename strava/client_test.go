@@ -1,100 +1,96 @@
 package strava
 
 import (
-	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestStravaClient(t *testing.T) {
-	requestCount := 0
-	authTokenCount := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch requestCount {
-		case 0:
-			assert.Equal(t, "/login", r.URL.Path)
-			w.Write([]byte(`<html><head>
-				<meta name="csrf-param" content="csrf_param_key" />
-				<meta name="csrf-token" content="csrf_param_value" />
-			</head></html>`))
-		case 1:
-			assert.Equal(t, "/session", r.URL.Path)
-			body, err := ioutil.ReadAll(r.Body)
-			require.NoError(t, err)
-			query, err := url.ParseQuery(string(body))
-			require.NoError(t, err)
-			assert.Equal(t, url.Values{
-				"csrf_param_key": []string{"csrf_param_value"},
-				"email":          []string{"test@example.com"},
-				"password":       []string{"password"},
-			}, query)
+func TestCloudFrontExpiresAt(t *testing.T) {
+	jar, err := cookiejar.New(nil)
+	require.NoError(t, err)
 
-			w.Header().Add("Set-Cookie", fmt.Sprintf("auth=auth_token_%d", authTokenCount))
-			authTokenCount++
-			w.WriteHeader(200)
-		default:
-			assert.Fail(t, "unexpected request")
-		}
+	sc := &client{
+		stravaUrl:  "https://www.strava.com",
+		httpClient: &http.Client{Jar: jar},
+	}
+
+	// No cookie yet — should return zero time.
+	assert.True(t, sc.CloudFrontExpiresAt().IsZero())
+
+	// Set the cookie directly on the jar.
+	expireMs := int64(1776129917000)
+	u, _ := url.Parse("https://www.strava.com")
+	jar.SetCookies(u, []*http.Cookie{
+		{Name: "_strava_CloudFront-Expires", Value: "1776129917000", Path: "/"},
+	})
+
+	got := sc.CloudFrontExpiresAt()
+	assert.Equal(t, time.UnixMilli(expireMs), got)
+}
+
+func TestRefreshCloudFrontCookies_concurrent(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/maps", r.URL.Path)
 		requestCount++
+		w.WriteHeader(http.StatusOK)
 	}))
+	defer server.Close()
 
 	jar, err := cookiejar.New(nil)
 	require.NoError(t, err)
 	sc := &client{
-		stravaUrl: server.URL,
-		email:     "test@example.com",
-		password:  "password",
-		httpClient: &http.Client{
-			Jar: jar,
-		},
+		stravaUrl:  server.URL,
+		httpClient: &http.Client{Jar: jar},
 	}
 
-	// concurrent logins should result in a single actual login
+	// Concurrent calls should result in a single actual HTTP request.
 	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
 		go func() {
-			assert.NoError(t, sc.Login())
+			assert.NoError(t, sc.RefreshCloudFrontCookies())
 			wg.Done()
 		}()
 	}
 	wg.Wait()
+	assert.Equal(t, 1, requestCount)
 
-	// make sure the server handled requests
-	assert.Equal(t, 2, requestCount)
-
-	// auth token cookie was set in the client's jar
-	u, err := url.Parse(server.URL)
-	require.NoError(t, err)
-	cookies := jar.Cookies(u)
-	require.Len(t, cookies, 1)
-	assert.Equal(t, http.Cookie{Name: "auth", Value: "auth_token_0"}, *cookies[0])
-
+	// A second batch should also work.
 	requestCount = 0
-
-	// the next batch of concurrent logins should also work
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
 		go func() {
-			assert.NoError(t, sc.Login())
+			assert.NoError(t, sc.RefreshCloudFrontCookies())
 			wg.Done()
 		}()
 	}
 	wg.Wait()
+	assert.Equal(t, 1, requestCount)
+}
 
-	// make sure the server handled requests
-	assert.Equal(t, 2, requestCount)
+func TestAthleteID(t *testing.T) {
+	// No token — should return error.
+	sc, err := NewClient("", "")
+	require.NoError(t, err)
+	_, err = sc.AthleteID()
+	assert.Error(t, err)
 
-	// auth token cookie was set in the client's jar
-	cookies = jar.Cookies(u)
-	require.Len(t, cookies, 1)
-	assert.Equal(t, http.Cookie{Name: "auth", Value: "auth_token_1"}, *cookies[0])
+	// Build a minimal JWT: header.payload.sig (signature not verified).
+	// Payload: {"sub":98765}
+	token := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjk4NzY1fQ.fakesig"
+	sc, err = NewClient(token, "dummy")
+	require.NoError(t, err)
+
+	id, err := sc.AthleteID()
+	require.NoError(t, err)
+	assert.Equal(t, "98765", id)
 }

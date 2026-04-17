@@ -1,13 +1,17 @@
 package strava
 
 import (
-	"fmt"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
-	colly "github.com/gocolly/colly/v2"
+	"github.com/pkg/errors"
 )
 
 type stravaTransport struct{}
@@ -18,112 +22,160 @@ func (t *stravaTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 type Client interface {
-	Login() error
-	CloudFrontAuth(server string) error
+	RefreshCloudFrontCookies() error
+	CloudFrontExpiresAt() time.Time
+	AthleteID() (string, error)
 	HttpClient() *http.Client
 }
 
-// the strava client holds an http client that maintains auth cookies
+// client holds an http.Client that maintains Strava auth cookies.
 type client struct {
-	stravaUrl  string
-	email      string
-	password   string
-	httpClient *http.Client
+	stravaUrl     string
+	httpClient    *http.Client
+	rememberToken string
+	stravaSession string
 
-	claimedLogin bool
-	claimLock    sync.Mutex
-	loginLock    sync.Mutex
+	claimedRefresh bool
+	claimLock      sync.Mutex
+	refreshLock    sync.Mutex
 }
 
-func NewClient(email, password string) (Client, error) {
+func NewClient(rememberToken, stravaSession string) (Client, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, err
 	}
-
-	return &client{
-		stravaUrl: StravaDomain,
-		email:     email,
-		password:  password,
+	sc := &client{
+		stravaUrl:     StravaDomain,
+		rememberToken: rememberToken,
+		stravaSession: stravaSession,
 		httpClient: &http.Client{
 			Transport: &stravaTransport{},
 			Jar:       jar,
 		},
-	}, nil
-}
-
-func (sc *client) getCSRF() (string, string, error) {
-	c := colly.NewCollector()
-	c.SetCookieJar(sc.httpClient.Jar)
-	var wg sync.WaitGroup
-	var csrfParam, csrfToken string
-	wg.Add(1)
-
-	c.OnHTML("html", func(e *colly.HTMLElement) {
-		csrfToken = e.ChildAttr(`meta[name="csrf-token"]`, "content")
-		csrfParam = e.ChildAttr(`meta[name="csrf-param"]`, "content")
-		wg.Done()
-	})
-
-	err := c.Visit(sc.stravaUrl + "/login")
-	if err != nil {
-		return "", "", err
 	}
-
-	wg.Wait()
-	return csrfParam, csrfToken, nil
+	if err := sc.setSessionCookies(); err != nil {
+		return nil, err
+	}
+	go func() {
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			sc.setSessionCookies() //nolint:errcheck
+		}
+	}()
+	return sc, nil
 }
 
-func (sc *client) claimLogin() bool {
+func (sc *client) setSessionCookies() error {
+	u, err := url.Parse(sc.stravaUrl)
+	if err != nil {
+		return err
+	}
+	expires := time.Now().Add(365 * 24 * time.Hour)
+	sc.httpClient.Jar.SetCookies(u, []*http.Cookie{
+		{
+			Name:     "strava_remember_token",
+			Value:    sc.rememberToken,
+			Domain:   "www.strava.com",
+			Path:     "/",
+			Expires:  expires,
+			HttpOnly: true,
+		},
+		{
+			Name:     "_strava4_session",
+			Value:    sc.stravaSession,
+			Domain:   ".strava.com",
+			Path:     "/",
+			Expires:  expires,
+			Secure:   true,
+			HttpOnly: true,
+		},
+	})
+	return nil
+}
+
+func (sc *client) claimRefresh() bool {
 	sc.claimLock.Lock()
-	claimed := !sc.claimedLogin
-	sc.claimedLogin = true
+	claimed := !sc.claimedRefresh
+	sc.claimedRefresh = true
 	sc.claimLock.Unlock()
 	return claimed
 }
 
-func (sc *client) unclaimLogin() {
+func (sc *client) unclaimRefresh() {
 	sc.claimLock.Lock()
-	sc.claimedLogin = false
+	sc.claimedRefresh = false
 	sc.claimLock.Unlock()
 }
 
-func (sc *client) CloudFrontAuth(server string) error {
-	sc.Login()
+// RefreshCloudFrontCookies makes an authenticated request to Strava so it
+// issues fresh CloudFront signed cookies. Concurrent callers are coalesced
+// into a single actual HTTP request.
+func (sc *client) RefreshCloudFrontCookies() error {
+	thisClaimsRefresh := sc.claimRefresh()
+	sc.refreshLock.Lock()
+	defer sc.refreshLock.Unlock()
 
-	sc.loginLock.Lock()
-	defer sc.loginLock.Unlock()
-
-	_, err := sc.httpClient.Get(fmt.Sprintf(GlobalHeatmapDomain, server) + "/auth")
-	return err
-}
-
-func (sc *client) Login() error {
-	thisClaimsLogin := sc.claimLogin()
-	sc.loginLock.Lock()
-	defer sc.loginLock.Unlock()
-
-	if thisClaimsLogin {
-		csrfParam, csrfToken, err := sc.getCSRF()
+	if thisClaimsRefresh {
+		resp, err := sc.httpClient.Get(sc.stravaUrl + "/maps")
 		if err != nil {
 			return err
 		}
-
-		sessionResponse, err := sc.httpClient.PostForm(sc.stravaUrl+"/session", url.Values{
-			csrfParam:  []string{csrfToken},
-			"email":    []string{sc.email},
-			"password": []string{sc.password},
-		})
-		if err != nil {
-			return err
-		}
-		sessionResponse.Body.Close()
-
-		sc.unclaimLogin()
+		resp.Body.Close()
+		sc.unclaimRefresh()
 	}
 	return nil
 }
 
+// CloudFrontExpiresAt returns the expiry time of the CloudFront signed cookies
+// by reading the _strava_CloudFront-Expires cookie from the jar.
+// Returns a zero time.Time if the cookie is absent or unparseable.
+func (sc *client) CloudFrontExpiresAt() time.Time {
+	u, err := url.Parse(sc.stravaUrl)
+	if err != nil {
+		return time.Time{}
+	}
+	for _, cookie := range sc.httpClient.Jar.Cookies(u) {
+		if cookie.Name == "_strava_CloudFront-Expires" {
+			ms, err := strconv.ParseInt(cookie.Value, 10, 64)
+			if err == nil {
+				return time.UnixMilli(ms)
+			}
+		}
+	}
+	return time.Time{}
+}
+
 func (sc *client) HttpClient() *http.Client {
 	return sc.httpClient
+}
+
+// AthleteID returns the athlete's numeric ID by parsing the strava_remember_token
+// cookie as a JWT and extracting the subject claim.
+func (sc *client) AthleteID() (string, error) {
+	u, err := url.Parse(sc.stravaUrl)
+	if err != nil {
+		return "", err
+	}
+	for _, cookie := range sc.httpClient.Jar.Cookies(u) {
+		if cookie.Name == "strava_remember_token" {
+			parts := strings.SplitN(cookie.Value, ".", 3)
+			if len(parts) != 3 {
+				return "", errors.New("strava_remember_token is not a valid JWT")
+			}
+			payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+			if err != nil {
+				return "", errors.Wrap(err, "decoding JWT payload")
+			}
+			var claims struct {
+				Sub int `json:"sub"`
+			}
+			if err := json.Unmarshal(payload, &claims); err != nil {
+				return "", errors.Wrap(err, "parsing JWT claims")
+			}
+			return strconv.Itoa(claims.Sub), nil
+		}
+	}
+	return "", errors.New("strava_remember_token cookie not found")
 }
