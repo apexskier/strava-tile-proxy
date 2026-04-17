@@ -14,12 +14,3 @@ func TestParseHeat(t *testing.T) {
 	_, err = ParseHeat("garbage")
 	assert.Error(t, err)
 }
-
-func TestParseSport(t *testing.T) {
-	color, err := ParseSport("run")
-	assert.Equal(t, SportRun, color)
-	assert.NoError(t, err)
-
-	_, err = ParseSport("garbage")
-	assert.Error(t, err)
-}

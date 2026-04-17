@@ -2,7 +2,6 @@ package service
 
 import (
 	"log"
-	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -23,14 +22,14 @@ func (m *mockStravaClient) HttpClient() *http.Client {
 	return args.Get(0).(*http.Client)
 }
 
-func (m *mockStravaClient) CloudFrontAuth(server string) error {
-	args := m.Called(server)
+func (m *mockStravaClient) RefreshCloudFrontCookies() error {
+	args := m.Called()
 	return args.Error(0)
 }
 
-func (m *mockStravaClient) Login() error {
+func (m *mockStravaClient) AthleteID() (string, error) {
 	args := m.Called()
-	return args.Error(0)
+	return args.String(0), args.Error(1)
 }
 
 func TestTileService_BadApiToken(t *testing.T) {
@@ -40,7 +39,6 @@ func TestTileService_BadApiToken(t *testing.T) {
 	s := Service{
 		stravaClient: &stravaClient,
 		logger:       log.Default(),
-		rand:         rand.New(rand.NewSource(0)),
 		apiToken:     "token",
 	}
 
@@ -56,9 +54,9 @@ func TestTileService_BadApiToken(t *testing.T) {
 func TestTileService_GlobalOK(t *testing.T) {
 	requestCount := 0
 	mockServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/server-a/tiles-auth/all/red/1/2/3@2x.png", r.URL.Path)
+		assert.Equal(t, "/server-a/identified/globalheat/all/blue/1/2/3@2x.png", r.URL.Path)
 		q := r.URL.Query()
-		assert.Empty(t, q)
+		assert.Equal(t, []string{"19"}, q["v"])
 		rw.WriteHeader(http.StatusOK)
 		requestCount++
 	}))
@@ -71,10 +69,9 @@ func TestTileService_GlobalOK(t *testing.T) {
 	s := Service{
 		stravaClient: &stravaClient,
 		logger:       log.Default(),
-		rand:         rand.New(rand.NewSource(0)),
 		apiToken:     "token",
 
-		globalHeatmapDomain: mockServer.URL + "/server-%s",
+		globalHeatmapDomain: mockServer.URL + "/server-a",
 	}
 
 	req := httptest.NewRequest("GET", "https://example.com/tiles/1/2/3?api_token=token", nil)
@@ -90,9 +87,9 @@ func TestTileService_GlobalOK(t *testing.T) {
 func TestTileService_GlobalOK_custom_params(t *testing.T) {
 	requestCount := 0
 	mockServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/server-a/tiles-auth/winter/purple/1/2/3@2x.png", r.URL.Path)
+		assert.Equal(t, "/server-a/identified/globalheat/winter/purple/1/2/3@2x.png", r.URL.Path)
 		q := r.URL.Query()
-		assert.Empty(t, q)
+		assert.Equal(t, []string{"19"}, q["v"])
 		rw.WriteHeader(http.StatusOK)
 		requestCount++
 	}))
@@ -105,12 +102,11 @@ func TestTileService_GlobalOK_custom_params(t *testing.T) {
 	s := Service{
 		stravaClient: &stravaClient,
 		logger:       log.Default(),
-		rand:         rand.New(rand.NewSource(0)),
 
-		globalHeatmapDomain: mockServer.URL + "/server-%s",
+		globalHeatmapDomain: mockServer.URL + "/server-a",
 	}
 
-	req := httptest.NewRequest("GET", "https://example.com/tiles/1/2/3?color=purple&sport=winter", nil)
+	req := httptest.NewRequest("GET", "https://example.com/tiles/1/2/3?color=purple&sports=winter", nil)
 	w := httptest.NewRecorder()
 
 	err := s.ServeGlobalTile(w, req)
@@ -123,11 +119,8 @@ func TestTileService_GlobalOK_custom_params(t *testing.T) {
 func TestTileService_PersonalOK(t *testing.T) {
 	requestCount := 0
 	mockServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/tiles/12321/red/1/2/3@2x.png", r.URL.Path)
+		assert.Equal(t, "/tiles/12321/orange/1/2/3@2x.png", r.URL.Path)
 		q := r.URL.Query()
-		assert.NotEmpty(t, q["filter_end"])
-		assert.Equal(t, []string{"2011-01-01"}, q["filter_start"])
-		assert.Equal(t, []string{"all"}, q["filter_type"])
 		assert.Equal(t, []string{"true"}, q["include_everyone"])
 		assert.Equal(t, []string{"true"}, q["include_followers_only"])
 		assert.Equal(t, []string{"true"}, q["include_only_me"])
@@ -140,13 +133,13 @@ func TestTileService_PersonalOK(t *testing.T) {
 	defer stravaClient.AssertExpectations(t)
 
 	stravaClient.On("HttpClient").Return(mockServer.Client())
+	stravaClient.On("AthleteID").Return("12321", nil)
 
 	s := Service{
 		stravaClient: &stravaClient,
 		logger:       log.Default(),
 
 		personalHeatmapDomain:        mockServer.URL,
-		athleteID:                    "12321",
 		revealPrivacyZones:           true,
 		revealOnlyMeActivities:       true,
 		revealFollowerOnlyActivities: true,
@@ -177,20 +170,20 @@ func TestTileService_PersonalOK_custom_params(t *testing.T) {
 	defer stravaClient.AssertExpectations(t)
 
 	stravaClient.On("HttpClient").Return(mockServer.Client())
+	stravaClient.On("AthleteID").Return("12321", nil)
 
 	s := Service{
 		stravaClient: &stravaClient,
 		logger:       log.Default(),
 
 		personalHeatmapDomain:        mockServer.URL,
-		athleteID:                    "12321",
 		revealPrivacyZones:           true,
 		revealOnlyMeActivities:       true,
 		revealFollowerOnlyActivities: true,
 		revealPublicActivities:       true,
 	}
 
-	req := httptest.NewRequest("GET", "https://example.com/tiles/1/2/3?color=purple&sport=winter", nil)
+	req := httptest.NewRequest("GET", "https://example.com/tiles/1/2/3?color=purple&sports=winter", nil)
 	w := httptest.NewRecorder()
 
 	err := s.ServePersonalTile(w, req)
@@ -203,7 +196,7 @@ func TestTileService_PersonalOK_custom_params(t *testing.T) {
 func TestTileService_Personal401(t *testing.T) {
 	requestCount := 0
 	mockServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/tiles/12321/red/1/2/3@2x.png", r.URL.Path)
+		assert.Equal(t, "/tiles/12321/orange/1/2/3@2x.png", r.URL.Path)
 		if requestCount == 0 {
 			rw.WriteHeader(http.StatusUnauthorized)
 		} else {
@@ -216,14 +209,14 @@ func TestTileService_Personal401(t *testing.T) {
 	defer stravaClient.AssertExpectations(t)
 
 	stravaClient.On("HttpClient").Return(mockServer.Client())
-	stravaClient.On("Login").Return(nil)
+	stravaClient.On("RefreshCloudFrontCookies").Return(nil)
+	stravaClient.On("AthleteID").Return("12321", nil)
 
 	s := Service{
 		stravaClient: &stravaClient,
 		logger:       log.Default(),
 
 		personalHeatmapDomain:        mockServer.URL,
-		athleteID:                    "12321",
 		revealPrivacyZones:           true,
 		revealOnlyMeActivities:       true,
 		revealFollowerOnlyActivities: true,
@@ -278,19 +271,12 @@ func TestTileService_400(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
-
-	w = httptest.NewRecorder()
-	req = httptest.NewRequest("GET", "https://example.com/tiles/1/2/3?sport=garbage", nil)
-	err = s.ServePersonalTile(w, req)
-
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestTileService_Global403(t *testing.T) {
 	requestCount := 0
 	mockServer := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "/server-a/tiles-auth/all/red/1/2/3@2x.png", r.URL.Path)
+		assert.Equal(t, "/server-a/identified/globalheat/all/blue/1/2/3@2x.png", r.URL.Path)
 		if requestCount == 0 {
 			rw.WriteHeader(http.StatusUnauthorized)
 		} else {
@@ -303,14 +289,13 @@ func TestTileService_Global403(t *testing.T) {
 	defer stravaClient.AssertExpectations(t)
 
 	stravaClient.On("HttpClient").Return(mockServer.Client())
-	stravaClient.On("CloudFrontAuth", "a").Return(nil)
+	stravaClient.On("RefreshCloudFrontCookies").Return(nil)
 
 	s := Service{
 		stravaClient: &stravaClient,
 		logger:       log.Default(),
-		rand:         rand.New(rand.NewSource(0)),
 
-		globalHeatmapDomain: mockServer.URL + "/server-%s",
+		globalHeatmapDomain: mockServer.URL + "/server-a",
 	}
 
 	req := httptest.NewRequest("GET", "https://example.com/tiles/1/2/3", nil)

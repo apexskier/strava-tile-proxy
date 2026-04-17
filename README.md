@@ -10,19 +10,22 @@ This is a simple Go server that proxies my [personal strava heatmap](https://sup
 
 The server is configured through environment variables, all of which are required:
 
-* `ATHLETE_ID` - your strava athlete ID (https://www.strava.com/athletes/$ATHLETE_ID)
-* `STRAVA_EMAIL` - your strava account's email
-* `STRAVA_PASSWORD` - your strava account's password (social sign in is not supported)
 * `REVEAL_PRIVACY_ZONES` - (bool) reveal [strava privacy zones](https://support.strava.com/hc/en-us/articles/115000173384-Privacy-Zones)
 * `REVEAL_ONLY_ME_ACTIVITIES` - (bool) reveal activities only visible to you
 * `REVEAL_FOLLOWER_ONLY_ACTIVITIES` - (bool) reveal activities visible to only your followers
 * `REVEAL_PUBLIC_ACTIVITIES` - (bool) reveal activities that are public
 * `API_TOKEN` - (optional, string) if non-empty, must be present in the `api_token` query parameter on requests
+* `STRAVA_REMEMBER_TOKEN` - (string) `strava_remember_token` cookie value, see [authentication below](#authentication)
+* `STRAVA4_SESSION` - (string) `strava4_session` cookie value, see [authentication below](#authentication)
 
 Tiles are accessible at the url `/tiles/{z}/{x}/{y}`, where `z`, `x`, and `y` are standard TMS xyz coordinates, with a maximum `z` of 14 and a minimum of ~6. A query parameters can be used customize tiles:
 
-* `color` (default: "red") - strava heat color ([supported options](https://github.com/apexskier/strava-tile-proxy/blob/411306d444c0f43f31d8d648a504ec56d2bb7b71/strava/consts.go#L17-L25))
-* `sport` (default: "all") - strava sports ([supported options](https://github.com/apexskier/strava-tile-proxy/blob/b1f89caec30ffc7275a3df705cb42fb0c3ebd834/strava/consts.go#L32-L38))
+* `color` (default: "orange" for personal, "blue" for global) - strava heat color ([supported options](./strava/heats.go))
+* `sport` (default: "all") - strava sports ([supported options](./strava/sports.go))
+
+### Authentication
+
+Run `go run ./cmd/auth` to generate an `.env.auth` file, which will store the required cookie values you need for authentication. This requires Chrome installed and will run a Chrome instance for you to sign in on.
 
 ## Setup
 
