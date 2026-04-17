@@ -38,8 +38,8 @@ This repo publishes a docker image you can use to run the proxy. I run using doc
     ports:
       - 43503:8080
     environment:
-      - STRAVA_EMAIL
-      - STRAVA_PASSWORD
+      - STRAVA_REMEMBER_TOKEN
+      - STRAVA4_SESSION
       - REVEAL_PRIVACY_ZONES
       - REVEAL_ONLY_ME_ACTIVITIES
       - REVEAL_FOLLOWER_ONLY_ACTIVITIES
