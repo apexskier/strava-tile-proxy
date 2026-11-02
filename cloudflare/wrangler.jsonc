@@ -1,0 +1,23 @@
+{
+  "name": "strava-tile-proxy",
+  "account_id": "b12fc7e0594361391a2e8fab40e3d278",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-30",
+  // Served at camlittle.com/strava-tile-proxy*; the route is attached by
+  // Terraform outside this repository.
+  "workers_dev": false,
+  "containers": [
+    {
+      "name": "strava-tile-proxy",
+      "class_name": "StravaTileProxy",
+      "image": "../Dockerfile",
+      "image_build_context": "..",
+      "instance_type": "lite",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "APP", "class_name": "StravaTileProxy" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["StravaTileProxy"] }]
+}
